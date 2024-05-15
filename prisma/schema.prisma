@@ -282,7 +282,7 @@ model TrueFalseSubpart {
   id             String    @id @default(auto()) @map("_id") @db.ObjectId
   question       String[]
   correctAnswer  Boolean[]
-  explanation    Boolean[]
+  explanation    String[]
   quizQuestionId String    @db.ObjectId
 }
 
