@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+export const quizTypeSchema = z.enum(["POST_QUIZ", "PRE_QUIZ"]);
+export const storyIdSchema = z
+  .string({
+    required_error: "story_id is required",
+    invalid_type_error: "story_id must be a ObjectId",
+  })
+  .regex(/^[0-9a-f]{24}$/, { message: "story_id must be a valid ObjectId" });
+
 export const complexMatchingSubpartSchema = z
   .object({
     question: z.string(),
@@ -63,7 +71,7 @@ export const multipleChoiceSubpartSchema = z
       correct_answer < options.length,
     {
       message:
-        "The lengths array of explanations and options must be equal, and the correct_answer number must be smaller options length",
+        "The lengths array of explanations and options must be equal, and the correct_answer index number must be smaller options length",
     },
   );
 
@@ -85,19 +93,14 @@ export const selectAllSubpartSchema = z
     },
     {
       message:
-        "The lengths array of explanations and options must be equal, and the correct_answer number must be smaller options length",
+        "The lengths array of explanations and options must be equal, and each index number in correct_answer must be smaller options length",
     },
   );
 
 export const createQuizSchema = z.object({
-  story_id: z
-    .string({
-      required_error: "story_id is required",
-      invalid_type_error: "story_id must be a ObjectId",
-    })
-    .regex(/^[0-9a-f]{24}$/, { message: "story_id must be a valid ObjectId" }),
-  contentCategory: z.string(),
-  questionType: z.enum([
+  story_id: storyIdSchema,
+  content_category: z.string(),
+  question_type: z.enum([
     "MULTIPLE_CHOICE",
     "TRUE_FALSE",
     "DIRECT_MATCHING",
@@ -105,7 +108,8 @@ export const createQuizSchema = z.object({
     "SELECT_ALL",
   ]),
   max_score: z.number().int().nonnegative(),
-  subparts: z.array(z.any()),
+  subpart: z.any(),
+  subheader: z.string(),
 });
 export const getQuizzesSchema = z.object({
   storyId: z.string(),
