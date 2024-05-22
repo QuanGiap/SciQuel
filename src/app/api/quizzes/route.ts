@@ -50,10 +50,10 @@ export async function POST(req: NextRequest) {
     }
     const quizData = parsed.data;
 
-    const isStoryExist = await prisma.story.count({
+    const CountStoryExist = await prisma.story.count({
       where: { id: quizData.story_id },
     });
-    if (isStoryExist === 0) {
+    if (CountStoryExist === 0) {
       return NextResponse.json({ error: "Story not found" }, { status: 404 });
     }
     const { subpart, errorMessage } = await createQuiz(quizData);
@@ -219,8 +219,9 @@ async function createQuiz(quiz: createQuizType) {
   let errorMessage = null;
   let subpart = { id: "" };
   let error = null;
+  const data = quiz.subpart;
   if (quiz.question_type === "COMPLEX_MATCHING") {
-    const parsedData = complexMatchingSubpartSchema.safeParse(quiz);
+    const parsedData = complexMatchingSubpartSchema.safeParse(data);
     if (!parsedData.success) {
       errorMessage = parsedData.error.errors[0].message;
       error = parsedData.error;
@@ -246,7 +247,7 @@ async function createQuiz(quiz: createQuizType) {
       });
     }
   } else if (quiz.question_type === "DIRECT_MATCHING") {
-    const parsedData = directMatchingSubpartSchema.safeParse(quiz);
+    const parsedData = directMatchingSubpartSchema.safeParse(data);
     if (!parsedData.success) {
       errorMessage = parsedData.error.errors[0].message;
       error = parsedData.error;
@@ -254,7 +255,7 @@ async function createQuiz(quiz: createQuizType) {
       const { categories, correct_answers, question, options, explanations } =
         parsedData.data;
       const correctAnswer = correct_answers.map((number) => number.toString());
-      subpart = await prisma.complexMatchingSubpart.create({
+      subpart = await prisma.directMatchingSubpart.create({
         data: {
           categories,
           options,
@@ -265,7 +266,7 @@ async function createQuiz(quiz: createQuizType) {
       });
     }
   } else if (quiz.question_type === "MULTIPLE_CHOICE") {
-    const parsedData = multipleChoiceSubpartSchema.safeParse(quiz);
+    const parsedData = multipleChoiceSubpartSchema.safeParse(data);
     if (!parsedData.success) {
       errorMessage = parsedData.error.errors[0].message;
       error = parsedData.error;
@@ -282,24 +283,24 @@ async function createQuiz(quiz: createQuizType) {
       });
     }
   } else if (quiz.question_type === "SELECT_ALL") {
-    const parsedData = selectAllSubpartSchema.safeParse(quiz);
+    const parsedData = selectAllSubpartSchema.safeParse(data);
     if (!parsedData.success) {
       errorMessage = parsedData.error.errors[0].message;
       error = parsedData.error;
     } else {
-      const { correct_answer, question, options, explanations } =
+      const { correct_answers, question, options, explanations } =
         parsedData.data;
       subpart = await prisma.selectAllSubpart.create({
         data: {
           options,
-          correctAnswer: correct_answer,
+          correctAnswer: correct_answers,
           question,
           explanations,
         },
       });
     }
   } else if (quiz.question_type === "TRUE_FALSE") {
-    const parsedData = trueFalseSubpartSchema.safeParse(quiz);
+    const parsedData = trueFalseSubpartSchema.safeParse(data);
     if (!parsedData.success) {
       errorMessage = parsedData.error.errors[0].message;
       error = parsedData.error;
