@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const quizTypeSchema = z.enum(["POST_QUIZ", "PRE_QUIZ"], {
+  required_error: "quiz_type is required in url url query parameters",
   invalid_type_error:
     "Invalid quiz_type.  Valid quiz_type: POST_QUIZ | PRE_QUIZ",
 });
@@ -10,6 +11,14 @@ export const storyIdSchema = z
     invalid_type_error: "story_id must be a ObjectId",
   })
   .regex(/^[0-9a-f]{24}$/, { message: "story_id must be a valid ObjectId" });
+export const quizQuestionIdSchema = z
+  .string({
+    required_error: "quiz_question_id is required in url query parameters",
+    invalid_type_error: "quiz_question_id must be a ObjectId",
+  })
+  .regex(/^[0-9a-f]{24}$/, {
+    message: "quiz_question_id must be a valid ObjectId",
+  });
 
 export const complexMatchingSubpartSchema = z
   .object({
@@ -284,7 +293,7 @@ export const selectAllSubpartSchema = z
         "index in correct_answers array must be smaller than options length",
     },
   );
-export const createQuizSchema = z.object({
+export const modifiedQuizSchema = z.object({
   story_id: storyIdSchema,
   content_category: z.string({
     required_error: "content_category is required",
