@@ -6,130 +6,154 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { NextResponse, type NextRequest } from "next/server";
-import { userResponseSchema } from "./schema";
+import { getSubpartQuizAnswear } from "../tools/SubpartQuiz";
+import { getUserId } from "../tools/User";
+import { postSchema } from "./schema";
+import { grading } from "./tools";
 
 const prisma = new PrismaClient();
 
 export async function POST(req: NextRequest) {
   try {
-    const requestBody = await req.json();
-
-    const parsedResult = userResponseSchema.safeParse(requestBody);
-    if (!parsedResult.success) {
-      return new NextResponse(JSON.stringify({ error: parsedResult.error }), {
-        status: 400,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-    }
-
-    // required input
-    const { storyId, questionType, userId, quizQuestionId, responseSubparts } =
-      requestBody;
-
-    const quizQuestion = await prisma.quizQuestion.findUnique({
-      where: { id: quizQuestionId },
-      include: { subparts: true },
-    });
-
-    if (!quizQuestion) {
+    const bodyParamParse = postSchema.safeParse(await req.json());
+    if (!bodyParamParse.success) {
       return new NextResponse(
-        JSON.stringify({ error: "Quiz question not found" }),
+        JSON.stringify({ error: bodyParamParse.error.errors[0].message }),
         {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
+          status: 400,
         },
       );
     }
-
-    // get user info
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      return new NextResponse(JSON.stringify({ error: "User not found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const firstQuizRecord = user.firstQuizRecord || {};
-    const mostRecentQuizRecord = user.mostRecentQuizRecord || {};
-
-    // console.log("Existing firstQuizRecord:", firstQuizRecord);
-    // console.log("Existing mostRecentQuizRecord:", mostRecentQuizRecord);
-
-      interface ResponseSubpart {
-        id: string;
-        subpartId: string;
-        subpartUserAns: string[];
-      }
-
-      // find corresponding subpart
-      const gradeResults = await Promise.all(
-        // eslint-disable-next-line @typescript-eslint/require-await
-        responseSubparts.map(async (responseSubpart: { subpartId: string; subpartUserAns: string[]; }) => {
-            const correspondingSubpart = quizQuestion.subparts.find(subpart => subpart.id === responseSubpart.subpartId);
-            if (!correspondingSubpart || !correspondingSubpart.correctAnswer) {
-                return { error: "Subpart not found or correctAnswer is undefined", subpartId: responseSubpart.subpartId };
-            }
-
-            if (!responseSubpart.subpartUserAns) {
-                return { error: "User response is undefined", subpartId: responseSubpart.subpartId };
-            }
-
-            const isCorrect = JSON.stringify(responseSubpart.subpartUserAns.sort()) === JSON.stringify(correspondingSubpart.correctAnswer.sort());
-            return { subpartId: responseSubpart.subpartId, isCorrect: isCorrect, explanation: correspondingSubpart.explanation, userResponses:responseSubpart.subpartUserAns};
-        })
-    );
-
-    const updatedFirstQuizRecord = user.firstQuizRecord 
-  ? (typeof user.firstQuizRecord === 'string' 
-    ? JSON.parse(user.firstQuizRecord) 
-    : user.firstQuizRecord)
-  : {};
-const updatedMostRecentQuizRecord = user.mostRecentQuizRecord 
-  ? (typeof user.mostRecentQuizRecord === 'string' 
-    ? JSON.parse(user.mostRecentQuizRecord) 
-    : user.mostRecentQuizRecord)
-  : {};
-
-    // console.log("Existing firstQuizRecord:", updatedFirstQuizRecord);
-    // console.log("Existing mostRecentQuizRecord:", updatedMostRecentQuizRecord);
-
-    gradeResults.forEach(grade => {
-      if (!updatedFirstQuizRecord.hasOwnProperty(grade.subpartId)) {
-        updatedFirstQuizRecord[grade.subpartId] = {
-          isCorrect: grade.isCorrect,
-          userResponses: grade.userResponses,
-        };
-      }
-      updatedMostRecentQuizRecord[grade.subpartId] = {
-        isCorrect: grade.isCorrect,
-        userResponses: grade.userResponses,
-      };
-    });
-    
-    console.log("Updated firstQuizRecord before saving:", updatedFirstQuizRecord);
-    console.log("Updated mostRecentQuizRecord before saving:", updatedMostRecentQuizRecord);
-
-    const updateUser = await prisma.user.update({
-      where: { id: userId },
-      data: {
-        firstQuizRecord: JSON.stringify(updatedFirstQuizRecord),
-      mostRecentQuizRecord: JSON.stringify(updatedMostRecentQuizRecord),
+    const bodyParam = bodyParamParse.data;
+    //get quiz record
+    const quizRecordPromise = prisma.quizRecord.findUnique({
+      where: { id: bodyParam.quiz_record_id },
+      select: {
+        quizQuestionIdRemain: true,
       },
     });
-    
-    //console.log("User after update:", updateUser);
-  
-
-    return new NextResponse(JSON.stringify({ gradeSubpart: gradeResults }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
+    const userIdPromise = getUserId();
+    const quizQuestionPromise = getSubpartQuizAnswear(
+      bodyParam.quiz_question_id,
+    );
+    const [quizQuestion, quizRecord, userId] = await Promise.all([
+      quizQuestionPromise,
+      quizRecordPromise,
+      userIdPromise,
+    ]);
+    if (!userId) {
+      return new NextResponse(
+        JSON.stringify({ error: "Authentication is required" }),
+        {
+          status: 400,
+        },
+      );
+    }
+    if (!quizRecord) {
+      return new NextResponse(
+        JSON.stringify({ error: "Quiz Record not found" }),
+        {
+          status: 404,
+        },
+      );
+    }
+    if (!quizQuestion) {
+      return new NextResponse(
+        JSON.stringify({ error: "Quiz Question not found" }),
+        {
+          status: 404,
+        },
+      );
+    }
+    //check quiz question id in quiz record
+    const indexFound = quizRecord.quizQuestionIdRemain.indexOf(
+      quizQuestion.quizQuestionId,
+    );
+    if (indexFound === -1) {
+      return new NextResponse(
+        JSON.stringify({ error: "This Quiz Question is already graded" }),
+        {
+          status: 403,
+        },
+      );
+    }
+    //start grading
+    const { errorMessage, errors, results, score, userResponse } = grading({
+      ...quizQuestion,
+      userAnswer: bodyParam.answer,
     });
+    if (errorMessage) {
+      return new NextResponse(JSON.stringify({ error: errorMessage, errors }), {
+        status: 400,
+      });
+    }
+    //create user response
+    const userRes = await prisma.userResponse.create({
+      data: {
+        userId,
+        userAns: userResponse,
+        quizQuestionId: quizQuestion.quizQuestionId,
+        questionType: quizQuestion.questionType,
+      },
+    });
+    //create grade
+    const createGradePromise = prisma.grade.create({
+      data: {
+        userId,
+        userResponseId: userRes.id,
+        quizQuestionId: quizQuestion.quizQuestionId,
+        totalScore: score,
+        maxScore: quizQuestion.maxScore,
+        quizRecordId: bodyParam.quiz_record_id,
+      },
+    });
+    //remove graded quizQuestionId from quizQuestionIdRemain
+    const updatequizRecordPromise = prisma.quizRecord.update({
+      where: { id: bodyParam.quiz_record_id },
+      data: {
+        quizQuestionIdRemain: quizRecord.quizQuestionIdRemain.filter(
+          (str) => str != quizQuestion.quizQuestionId,
+        ),
+      },
+    });
+    //upsert: update data if exist, create data if not exist
+    const userFirstAnsPromise = prisma.questionAnswerFirstTime.upsert({
+      where: {
+        userId_quizQuestionId: {
+          userId,
+          quizQuestionId: quizQuestion.quizQuestionId,
+        },
+      },
+      create: {
+        userId,
+        quizQuestionId: quizQuestion.quizQuestionId,
+        corrections: results.map((result) => result.every((val) => val)),
+      },
+      update: {},
+    });
+    await Promise.all([
+      createGradePromise,
+      updatequizRecordPromise,
+      userFirstAnsPromise,
+    ]);
+    //return result
+    return new NextResponse(
+      JSON.stringify({
+        message: "Quiz question graded",
+        score,
+        maxScore: quizQuestion.maxScore,
+        results: results.map((value, index) => {
+          return {
+            correct: value,
+            explaination: quizQuestion.explanations[index],
+          };
+        }),
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
     console.error("Error processing request:", error);
     return new NextResponse(
@@ -143,7 +167,7 @@ const updatedMostRecentQuizRecord = user.mostRecentQuizRecord
 }
 
 export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get('userId');
+  const userId = req.nextUrl.searchParams.get("userId");
 
   if (!userId) {
     return new NextResponse(JSON.stringify({ error: "User ID is required" }), {
@@ -168,13 +192,16 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    return new NextResponse(JSON.stringify({
-      firstQuizRecord: user.firstQuizRecord,
-      mostRecentQuizRecord: user.mostRecentQuizRecord,
-    }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new NextResponse(
+      JSON.stringify({
+        firstQuizRecord: user.firstQuizRecord,
+        mostRecentQuizRecord: user.mostRecentQuizRecord,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
     console.error("Error processing request:", error);
     return new NextResponse(

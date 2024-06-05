@@ -196,9 +196,9 @@ model QuizRecord {
   userId    String? @db.ObjectId
   ipAddress String?
 
-  user User? @relation(fields: [userId], references: [id])
-
-  grade Grade[]
+  user                 User?    @relation(fields: [userId], references: [id])
+  quizQuestionIdRemain String[] @db.ObjectId
+  grade                Grade[]
 
   @@index([createAt])
 }
@@ -292,7 +292,7 @@ model DirectMatchingSubpart {
   question      String
   options       String[]
   categories    String[]
-  correctAnswer String[]
+  correctAnswer Int[]
   explanations  String[]
 }
 
@@ -306,10 +306,10 @@ model ComplexMatchingSubpart {
 }
 
 model SelectAllSubpart {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
   question      String
   options       String[]
-  correctAnswer Int[]
+  correctAnswer Boolean[]
   explanations  String[]
 }
 

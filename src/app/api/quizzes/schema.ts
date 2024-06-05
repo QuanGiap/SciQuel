@@ -7,7 +7,7 @@ export const quizTypeSchema = z.enum(["POST_QUIZ", "PRE_QUIZ"], {
 });
 export const storyIdSchema = z
   .string({
-    required_error: "story_id is required",
+    required_error: "story_id is required in url query parameters",
     invalid_type_error: "story_id must be a ObjectId",
   })
   .regex(/^[0-9a-f]{24}$/, { message: "story_id must be a valid ObjectId" });
@@ -47,11 +47,13 @@ export const complexMatchingSubpartSchema = z
             invalid_type_error:
               "value in correct_answers must be a nonnegative integer",
           })
-          .nonnegative(),
-
+          .nonnegative({
+            message: "value in correct_answers must be a nonnegative",
+          })
+          .int({ message: "value in correct_answers must be a integer" }),
         {
           invalid_type_error:
-            "value is correct_answers array must be a nonnegative integer 1D array",
+            "value is correct_answers array must be a nonnegative integer array",
         },
       ),
       {
@@ -211,11 +213,10 @@ export const multipleChoiceSubpartSchema = z
     ),
     correct_answer: z
       .number({
-        invalid_type_error:
-          "value in correct_answer must be a nonnegative int number",
+        invalid_type_error: "answer must be a nonnegative integer",
       })
-      .int()
-      .nonnegative(),
+      .nonnegative({ message: "value must be a nonnegative" })
+      .int({ message: "value must be a integer" }),
     explanations: z.array(
       z.string({
         invalid_type_error: "value in explanations must be a string",
@@ -227,11 +228,10 @@ export const multipleChoiceSubpartSchema = z
     ),
   })
   .refine(
-    ({ options, correct_answer, explanations }) =>
-      compareAllEqual([explanations, options]) &&
-      correct_answer < options.length,
+    ({ options, explanations }) => compareAllEqual([explanations, options]),
     {
-      message: "The lengths array of explanations and options must be equal",
+      message:
+        "The lengths array of explanations and options must be all equal",
     },
   )
   .refine(
@@ -260,8 +260,10 @@ export const selectAllSubpartSchema = z
           invalid_type_error:
             "value in correct_answer must be a nonnegative int number",
         })
-        .int()
-        .nonnegative(),
+        .int({ message: "value in correct_answer must be a integer number" })
+        .nonnegative({
+          message: "value in correct_answer must be a nonnegative number",
+        }),
       {
         required_error: "correct_answers is required",
         invalid_type_error:
@@ -282,7 +284,8 @@ export const selectAllSubpartSchema = z
   .refine(
     ({ options, explanations }) => compareAllEqual([explanations, options]),
     {
-      message: "The lengths array of explanations and options must be equal",
+      message:
+        "The lengths array of explanations, and options must be all equal",
     },
   )
   //check if index answer is out of bound
@@ -294,7 +297,12 @@ export const selectAllSubpartSchema = z
     },
   );
 export const modifiedQuizSchema = z.object({
-  story_id: storyIdSchema,
+  story_id: z
+    .string({
+      required_error: "story_id is required",
+      invalid_type_error: "story_id must be a ObjectId",
+    })
+    .regex(/^[0-9a-f]{24}$/, { message: "story_id must be a valid ObjectId" }),
   content_category: z.string({
     required_error: "content_category is required",
     invalid_type_error: "content_category must be a string",
@@ -334,6 +342,8 @@ export const getQuizzesSchema = z.object({
     .regex(/^[0-9a-f]{24}$/, { message: "story_id must be a valid ObjectId" }),
 });
 
+//Checking value function
+
 //check if all array length are equals to each other
 function compareAllEqual(values: any[][]) {
   const len = values.length;
@@ -345,24 +355,22 @@ function compareAllEqual(values: any[][]) {
   }
   return true;
 }
+
 //check if there is duplicate number in array
 function isDuplicate(arr: number[] | number[][]) {
   if (arr.length === 0) return false;
   const set: { [key: number]: number } = {};
-  //check if arr is 2d array
-  if (Array.isArray(arr[0])) {
-    //confirm arr is 1d array
-    arr = arr as number[][];
-    for (let i = 0; i < arr.length; i++) {
+  for (let i = 0; i < arr.length; i++) {
+    if (Array.isArray(arr[i])) {
+      //confirm this index arr is 2d array
+      arr = arr as number[][];
       for (let j = 0; j < arr[i].length; j++) {
         const num = arr[i][j];
         if (set[num]) return true;
       }
-    }
-  } else {
-    //confirm arr is 1d array
-    arr = arr as number[];
-    for (let i = 0; i < arr.length; i++) {
+    } else {
+      //confirm this index arr is 1d array
+      arr = arr as number[];
       const num = arr[i];
       if (set[num]) return true;
     }
@@ -372,19 +380,17 @@ function isDuplicate(arr: number[] | number[][]) {
 //check if answer index is out of bound
 function isOutOfBound(answears: number[] | number[][], options: string[]) {
   //check if answears is 2d array
-  if (Array.isArray(answears[0])) {
-    //confirm answears is 2d array
-    answears = answears as number[][];
-    for (let i = 0; i < answears.length; i++) {
+  for (let i = 0; i < answears.length; i++) {
+    if (Array.isArray(answears[i])) {
+      //confirm answears is 2d array
+      answears = answears as number[][];
       for (let j = 0; j < answears[i].length; j++) {
         const num = answears[i][j];
         if (num >= options.length) return true;
       }
-    }
-  } else {
-    //confirm answears is 1d array
-    answears = answears as number[];
-    for (let i = 0; i < answears.length; i++) {
+    } else {
+      //confirm answears is 1d array
+      answears = answears as number[];
       const num = answears[i];
       if (num >= options.length) return true;
     }

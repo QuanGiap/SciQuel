@@ -5,7 +5,7 @@ import { PrismaClient, QuestionType } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { isEditor } from "../contact/tools";
+import { isEditor } from "../tools/User";
 import {
   complexMatchingSubpartSchema,
   directMatchingSubpartSchema,
@@ -17,21 +17,9 @@ import {
   storyIdSchema,
   trueFalseSubpartSchema,
 } from "./schema";
+import { getDeleteSuppart, getSubpart, modifiedQuiz } from "./tools";
 
 const prisma = new PrismaClient();
-type QuizQuestion = z.infer<typeof modifiedQuizSchema>;
-interface QuizQuestionI {
-  contentCategory: string;
-  questionType:
-    | "MULTIPLE_CHOICE"
-    | "TRUE_FALSE"
-    | "DIRECT_MATCHING"
-    | "COMPLEX_MATCHING"
-    | "SELECT_ALL";
-  maxScore: number;
-  subpartId: string;
-}
-type questinoType = QuizQuestionI["questionType"];
 
 export async function POST(req: NextRequest) {
   try {
@@ -59,13 +47,16 @@ export async function POST(req: NextRequest) {
     if (CountStoryExist === 0) {
       return NextResponse.json({ error: "Story not found" }, { status: 404 });
     }
-    const { subpartPromise, errorMessage } = modifiedQuiz({
+    const { subpartPromise, errorMessage, errors } = modifiedQuiz({
       subpartData: quizData.subpart,
       question_type: quizData.question_type,
     });
     const subpart = await subpartPromise;
     if (errorMessage) {
-      return NextResponse.json({ error: errorMessage }, { status: 400 });
+      return NextResponse.json(
+        { error: errorMessage, errors },
+        { status: 400 },
+      );
     }
     if (!subpart) {
       return NextResponse.json(
@@ -164,6 +155,7 @@ export async function GET(req: NextRequest) {
         questionType: true,
         maxScore: true,
         subpartId: true,
+        subheader: true,
       },
     });
     if (quizzes.length == 0) {
@@ -177,7 +169,7 @@ export async function GET(req: NextRequest) {
     }
 
     //get subpart
-    const subpartPromises = quizzes.map((quiz) => getFindSubpartPromise(quiz));
+    const subpartPromises = quizzes.map((quiz) => getSubpart(quiz));
     const subparts = await Promise.all(subpartPromises);
     const quizRecord = await prisma.quizRecord.create({
       data: {
@@ -186,10 +178,19 @@ export async function GET(req: NextRequest) {
         maxScore: quizzes.reduce((sum, quiz) => sum + quiz.maxScore, 0),
         score: 0,
         quizType: quizTypeParse.data,
+        quizQuestionIdRemain: quizzes.map((quiz) => quiz.id),
       },
     });
     const quizResponse = quizzes.map((quiz, index) => {
-      return { ...quiz, ...subparts[index] };
+      const { subheader, questionType, id, maxScore, contentCategory } = quiz;
+      return {
+        sub_header: subheader,
+        question_type: questionType,
+        quiz_question_id: id,
+        max_score: maxScore,
+        content_category: contentCategory,
+        ...subparts[index],
+      };
     });
     return new NextResponse(
       JSON.stringify({ quizzes: quizResponse, quiz_record_id: quizRecord.id }),
@@ -246,16 +247,21 @@ export async function DELETE(req: NextRequest) {
     const quizQuestionDeletePromise = prisma.quizQuestion.delete({
       where: { id: quizQuestionIdParse.data },
     });
-    const subpartDeletePromise = getDeleteSuppartPrismaPromise({
+    const subpartDeletePromise = getDeleteSuppart({
       ...quizQuestionCheck,
     });
 
     await Promise.all([quizQuestionDeletePromise, subpartDeletePromise]);
 
-    return new NextResponse(JSON.stringify({}), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new NextResponse(
+      JSON.stringify({
+        message: "Quiz question deleted",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
     console.error("Error processing request:", error);
     return new NextResponse(
@@ -324,13 +330,16 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const { errorMessage, subpartPromise } = modifiedQuiz({
+    const { errorMessage, subpartPromise, errors } = modifiedQuiz({
       question_type: quizQuestionCheck.questionType,
       subpartId: quizQuestionCheck.subpartId,
       subpartData: quizData.subpart,
     });
     if (errorMessage) {
-      return NextResponse.json({ error: errorMessage }, { status: 400 });
+      return NextResponse.json(
+        { error: errorMessage, errors },
+        { status: 400 },
+      );
     }
     const patchQuizQuestionPromise = prisma.quizQuestion.update({
       data: {
@@ -351,7 +360,7 @@ export async function PATCH(req: NextRequest) {
 
     return new NextResponse(
       JSON.stringify({
-        message: "Quiz question created",
+        message: "Quiz question updated",
         quizData: { ...quizQuestion, subpart },
       }),
       {
@@ -368,250 +377,5 @@ export async function PATCH(req: NextRequest) {
         headers: { "Content-Type": "application/json" },
       },
     );
-  }
-}
-
-function modifiedQuiz(data: {
-  question_type: QuestionType;
-  subpartId?: string;
-  subpartData: any;
-}) {
-  const { question_type, subpartId = "", subpartData } = data;
-  const isUpdateType = subpartId.length != 0;
-  let errorMessage = null;
-  let subpartPromise = null;
-  let error = null;
-  if (question_type === "COMPLEX_MATCHING") {
-    const parsedData = complexMatchingSubpartSchema.safeParse(subpartData);
-    if (!parsedData.success) {
-      errorMessage = parsedData.error.errors[0].message;
-      error = parsedData.error;
-    } else {
-      const { categories, correct_answers, question, options, explanations } =
-        parsedData.data;
-      const correctAnswer = correct_answers.map((numbers) => {
-        let str = "";
-        numbers.forEach((number) => {
-          str += number + " ";
-        });
-        str = str.substring(0, str.length - 1);
-        return str;
-      });
-
-      if (isUpdateType) {
-        subpartPromise = prisma.complexMatchingSubpart.update({
-          data: {
-            categories,
-            options,
-            correctAnswer,
-            question,
-            explanations,
-          },
-          where: {
-            id: subpartId,
-          },
-        });
-      } else {
-        subpartPromise = prisma.complexMatchingSubpart.create({
-          data: {
-            categories,
-            options,
-            correctAnswer,
-            question,
-            explanations,
-          },
-        });
-      }
-    }
-  } else if (question_type === "DIRECT_MATCHING") {
-    const parsedData = directMatchingSubpartSchema.safeParse(subpartData);
-    if (!parsedData.success) {
-      errorMessage = parsedData.error.errors[0].message;
-      error = parsedData.error;
-    } else {
-      const { categories, correct_answers, question, options, explanations } =
-        parsedData.data;
-      const correctAnswer = correct_answers.map((number) => number.toString());
-      if (isUpdateType) {
-        subpartPromise = prisma.directMatchingSubpart.update({
-          data: {
-            categories,
-            options,
-            correctAnswer,
-            question,
-            explanations,
-          },
-          where: {
-            id: subpartId,
-          },
-        });
-      } else {
-        subpartPromise = prisma.directMatchingSubpart.create({
-          data: {
-            categories,
-            options,
-            correctAnswer,
-            question,
-            explanations,
-          },
-        });
-      }
-    }
-  } else if (question_type === "MULTIPLE_CHOICE") {
-    const parsedData = multipleChoiceSubpartSchema.safeParse(subpartData);
-    if (!parsedData.success) {
-      errorMessage = parsedData.error.errors[0].message;
-      error = parsedData.error;
-    } else {
-      const { question, options, correct_answer, explanations } =
-        parsedData.data;
-      if (isUpdateType) {
-        subpartPromise = prisma.multipleChoiceSubpart.update({
-          data: {
-            options,
-            correctAnswer: correct_answer,
-            question,
-            explanations,
-          },
-          where: {
-            id: subpartId,
-          },
-        });
-      } else {
-        subpartPromise = prisma.multipleChoiceSubpart.create({
-          data: {
-            options,
-            correctAnswer: correct_answer,
-            question,
-            explanations,
-          },
-        });
-      }
-    }
-  } else if (question_type === "SELECT_ALL") {
-    const parsedData = selectAllSubpartSchema.safeParse(subpartData);
-    if (!parsedData.success) {
-      errorMessage = parsedData.error.errors[0].message;
-      error = parsedData.error;
-    } else {
-      const { correct_answers, question, options, explanations } =
-        parsedData.data;
-      if (isUpdateType) {
-        subpartPromise = prisma.selectAllSubpart.update({
-          data: {
-            options,
-            correctAnswer: correct_answers,
-            question,
-            explanations,
-          },
-          where: {
-            id: subpartId,
-          },
-        });
-      } else {
-        subpartPromise = prisma.selectAllSubpart.create({
-          data: {
-            options,
-            correctAnswer: correct_answers,
-            question,
-            explanations,
-          },
-        });
-      }
-    }
-  } else if (question_type === "TRUE_FALSE") {
-    const parsedData = trueFalseSubpartSchema.safeParse(subpartData);
-    if (!parsedData.success) {
-      errorMessage = parsedData.error.errors[0].message;
-      error = parsedData.error;
-    } else {
-      const { questions, correct_answers, explanations } = parsedData.data;
-      if (isUpdateType) {
-        subpartPromise = prisma.trueFalseSubpart.update({
-          data: {
-            correctAnswer: correct_answers,
-            questions: questions,
-            explanations,
-          },
-          where: {
-            id: subpartId,
-          },
-        });
-      } else {
-        subpartPromise = prisma.trueFalseSubpart.create({
-          data: {
-            correctAnswer: correct_answers,
-            questions: questions,
-            explanations,
-          },
-        });
-      }
-    }
-  } else {
-    errorMessage = "Unknown type: " + question_type;
-  }
-  return { subpartPromise, errorMessage, error };
-}
-
-function getDeleteSuppartPrismaPromise({
-  questionType,
-  subpartId,
-}: {
-  questionType: questinoType;
-  subpartId: string;
-}) {
-  if (questionType === "COMPLEX_MATCHING") {
-    return prisma.complexMatchingSubpart.delete({ where: { id: subpartId } });
-  } else if (questionType === "DIRECT_MATCHING") {
-    return prisma.directMatchingSubpart.delete({ where: { id: subpartId } });
-  } else if (questionType === "MULTIPLE_CHOICE") {
-    return prisma.multipleChoiceSubpart.delete({ where: { id: subpartId } });
-  } else if (questionType === "SELECT_ALL") {
-    return prisma.selectAllSubpart.delete({ where: { id: subpartId } });
-  } else {
-    return prisma.trueFalseSubpart.delete({ where: { id: subpartId } });
-  }
-}
-
-function getFindSubpartPromise(quiz: QuizQuestionI) {
-  if (quiz.questionType === "COMPLEX_MATCHING") {
-    return prisma.complexMatchingSubpart.findUnique({
-      where: { id: quiz.subpartId },
-      select: {
-        question: true,
-        categories: true,
-        options: true,
-      },
-    });
-  } else if (quiz.questionType === "DIRECT_MATCHING") {
-    return prisma.directMatchingSubpart.findUnique({
-      where: { id: quiz.subpartId },
-      select: {
-        question: true,
-        categories: true,
-        options: true,
-      },
-    });
-  } else if (quiz.questionType === "MULTIPLE_CHOICE") {
-    return prisma.multipleChoiceSubpart.findUnique({
-      where: { id: quiz.subpartId },
-      select: {
-        question: true,
-        options: true,
-      },
-    });
-  } else if (quiz.questionType === "SELECT_ALL") {
-    return prisma.selectAllSubpart.findUnique({
-      where: { id: quiz.subpartId },
-      select: {
-        question: true,
-        options: true,
-      },
-    });
-  } else {
-    return prisma.trueFalseSubpart.findUnique({
-      where: { id: quiz.subpartId },
-      select: { questions: true },
-    });
   }
 }
