@@ -7,15 +7,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { isEditor } from "../tools/User";
 import {
-  complexMatchingSubpartSchema,
-  directMatchingSubpartSchema,
   modifiedQuizSchema,
-  multipleChoiceSubpartSchema,
   quizQuestionIdSchema,
   quizTypeSchema,
-  selectAllSubpartSchema,
   storyIdSchema,
-  trueFalseSubpartSchema,
 } from "./schema";
 import { getDeleteSuppart, getSubpart, modifiedQuiz } from "./tools";
 
@@ -30,17 +25,21 @@ export async function POST(req: NextRequest) {
 
     const requestBody = await req.json();
     const parsed = modifiedQuizSchema.safeParse(requestBody);
-
     if (!parsed.success) {
-      return new NextResponse(JSON.stringify({ error: parsed.error }), {
-        status: 400,
-        headers: {
-          "Content-Type": "application/json",
+      return new NextResponse(
+        JSON.stringify({
+          error: parsed.error.errors[0].message,
+          errors: parsed.error.errors.map((err) => err.message),
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+          },
         },
-      });
+      );
     }
     const quizData = parsed.data;
-
     const CountStoryExist = await prisma.story.count({
       where: { id: quizData.story_id },
     });

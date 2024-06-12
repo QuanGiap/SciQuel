@@ -1,14 +1,14 @@
 import prisma from "@/lib/prisma";
-import { QuestionType } from "@prisma/client";
+import { type QuestionType } from "@prisma/client";
 import { getServerSession } from "next-auth";
-import { z } from "zod";
+import { type z } from "zod";
 import {
   complexMatchingSubpartSchema,
   directMatchingSubpartSchema,
-  modifiedQuizSchema,
   multipleChoiceSubpartSchema,
   selectAllSubpartSchema,
   trueFalseSubpartSchema,
+  type modifiedQuizSchema,
 } from "./schema";
 
 type modifiedQuizType = z.infer<typeof modifiedQuizSchema>;
@@ -145,7 +145,7 @@ export function modifiedQuiz(data: {
     } else {
       const { correct_answers, question, options, explanations } =
         parsedData.data;
-      let correctAnswer: boolean[] = [];
+      const correctAnswer: boolean[] = [];
       for (let i = 0; i < options.length; i++) {
         correctAnswer.push(false);
       }
