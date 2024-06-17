@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const questionType = z.enum(
+export const questionTypeSchema = z.enum(
   [
     "MULTIPLE_CHOICE",
     "TRUE_FALSE",
@@ -14,6 +14,15 @@ export const questionType = z.enum(
       "Invalid question_type.  Valid question_type: MULTIPLE_CHOICE | SELECT_ALL | COMPLEX_MATCHING | DIRECT_MATCHING | TRUE_FALSE",
   },
 );
+
+export const storyIdSchema = z
+  .string({
+    required_error: "story_id is required",
+    invalid_type_error: "story_id must be a ObjectId",
+  })
+  .regex(/^[0-9a-f]{24}$/, {
+    message: "story_id must be a valid ObjectId",
+  });
 
 export const postSchema = z.object({
   quiz_question_id: z
@@ -93,7 +102,7 @@ export const trueFalseAnswerSchema = z.array(
 );
 export const multipleChoiceAnswerSchema = z
   .number({
-    invalid_type_error: "value in answer must be a nonnegative integer",
+    invalid_type_error: "answer must be a nonnegative integer , except -1",
   })
   .int({ message: "value in answer must be a integer" })
   //check if number is nonnegative (except -1 which represent no answer)
@@ -137,27 +146,6 @@ function isDuplicate(arr: number[] | number[][], excludeNumber: number[] = []) {
       if (excludeNumber.includes(num)) continue;
       if (set[num]) return true;
       set[num] = true;
-    }
-  }
-  return false;
-}
-
-//check if answer index is out of bound
-function isOutOfBound(answears: number[] | number[][], options: string[]) {
-  //check if answears is 2d array
-  for (let i = 0; i < answears.length; i++) {
-    if (Array.isArray(answears[i])) {
-      //confirm answears is 2d array
-      answears = answears as number[][];
-      for (let j = 0; j < answears[i].length; j++) {
-        const num = answears[i][j];
-        if (num >= options.length) return true;
-      }
-    } else {
-      //confirm answears is 1d array
-      answears = answears as number[];
-      const num = answears[i];
-      if (num >= options.length) return true;
     }
   }
   return false;

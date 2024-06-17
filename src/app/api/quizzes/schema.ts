@@ -1,9 +1,13 @@
+import { QuizType } from "@prisma/client";
 import { z } from "zod";
 
-export const quizTypeSchema = z.enum(["POST_QUIZ", "PRE_QUIZ"], {
+const DEFAULT_MAX_POINT = 10;
+
+export const quizTypeSchema = z.nativeEnum(QuizType, {
   required_error: "quiz_type is required in url url query parameters",
   invalid_type_error:
-    "Invalid quiz_type.  Valid quiz_type: POST_QUIZ | PRE_QUIZ",
+    "Invalid quiz_type.  Valid quiz_type: " +
+    Object.values(QuizType).map((en) => en[0]),
 });
 export const storyIdSchema = z
   .string({
@@ -322,11 +326,11 @@ export const modifiedQuizSchema = z.object({
   ),
   max_score: z
     .number({
-      required_error: "max_score is required",
       invalid_type_error: "max_score must be a nonnegative int number",
     })
     .int()
-    .nonnegative(),
+    .nonnegative()
+    .default(DEFAULT_MAX_POINT),
   subpart: z.any(),
   subheader: z.string({
     required_error: "subheader is required",

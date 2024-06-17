@@ -11,23 +11,18 @@ import {
   type modifiedQuizSchema,
 } from "./schema";
 
-type modifiedQuizType = z.infer<typeof modifiedQuizSchema>;
-type questinoType = modifiedQuizType["question_type"];
-
 interface QuizQuestionI {
   contentCategory: string;
-  questionType: questinoType;
+  questionType: QuestionType;
   maxScore: number;
   subpartId: string;
 }
 
-export function modifiedQuiz(data: {
+export function createQuizSubpart(data: {
   question_type: QuestionType;
-  subpartId?: string;
   subpartData: any;
 }) {
-  const { question_type, subpartId = "", subpartData } = data;
-  const isUpdateType = subpartId.length != 0;
+  const { question_type, subpartData } = data;
   let errorMessage = null;
   let subpartPromise = null;
   let errors: string[] = [];
@@ -48,30 +43,15 @@ export function modifiedQuiz(data: {
         return str;
       });
 
-      if (isUpdateType) {
-        subpartPromise = prisma.complexMatchingSubpart.update({
-          data: {
-            categories,
-            options,
-            correctAnswer,
-            question,
-            explanations,
-          },
-          where: {
-            id: subpartId,
-          },
-        });
-      } else {
-        subpartPromise = prisma.complexMatchingSubpart.create({
-          data: {
-            categories,
-            options,
-            correctAnswer,
-            question,
-            explanations,
-          },
-        });
-      }
+      subpartPromise = prisma.complexMatchingSubpart.create({
+        data: {
+          categories,
+          options,
+          correctAnswer,
+          question,
+          explanations,
+        },
+      });
     }
   } else if (question_type === "DIRECT_MATCHING") {
     const parsedData = directMatchingSubpartSchema.safeParse(subpartData);
@@ -81,30 +61,16 @@ export function modifiedQuiz(data: {
     } else {
       const { categories, correct_answers, question, options, explanations } =
         parsedData.data;
-      if (isUpdateType) {
-        subpartPromise = prisma.directMatchingSubpart.update({
-          data: {
-            categories,
-            options,
-            correctAnswer: correct_answers,
-            question,
-            explanations,
-          },
-          where: {
-            id: subpartId,
-          },
-        });
-      } else {
-        subpartPromise = prisma.directMatchingSubpart.create({
-          data: {
-            categories,
-            options,
-            correctAnswer: correct_answers,
-            question,
-            explanations,
-          },
-        });
-      }
+
+      subpartPromise = prisma.directMatchingSubpart.create({
+        data: {
+          categories,
+          options,
+          correctAnswer: correct_answers,
+          question,
+          explanations,
+        },
+      });
     }
   } else if (question_type === "MULTIPLE_CHOICE") {
     const parsedData = multipleChoiceSubpartSchema.safeParse(subpartData);
@@ -114,28 +80,15 @@ export function modifiedQuiz(data: {
     } else {
       const { question, options, correct_answer, explanations } =
         parsedData.data;
-      if (isUpdateType) {
-        subpartPromise = prisma.multipleChoiceSubpart.update({
-          data: {
-            options,
-            correctAnswer: correct_answer,
-            question,
-            explanations,
-          },
-          where: {
-            id: subpartId,
-          },
-        });
-      } else {
-        subpartPromise = prisma.multipleChoiceSubpart.create({
-          data: {
-            options,
-            correctAnswer: correct_answer,
-            question,
-            explanations,
-          },
-        });
-      }
+
+      subpartPromise = prisma.multipleChoiceSubpart.create({
+        data: {
+          options,
+          correctAnswer: correct_answer,
+          question,
+          explanations,
+        },
+      });
     }
   } else if (question_type === "SELECT_ALL") {
     const parsedData = selectAllSubpartSchema.safeParse(subpartData);
@@ -152,28 +105,15 @@ export function modifiedQuiz(data: {
       correct_answers.forEach((val) => {
         correctAnswer[val] = true;
       });
-      if (isUpdateType) {
-        subpartPromise = prisma.selectAllSubpart.update({
-          data: {
-            options,
-            correctAnswer,
-            question,
-            explanations,
-          },
-          where: {
-            id: subpartId,
-          },
-        });
-      } else {
-        subpartPromise = prisma.selectAllSubpart.create({
-          data: {
-            options,
-            correctAnswer,
-            question,
-            explanations,
-          },
-        });
-      }
+
+      subpartPromise = prisma.selectAllSubpart.create({
+        data: {
+          options,
+          correctAnswer,
+          question,
+          explanations,
+        },
+      });
     }
   } else if (question_type === "TRUE_FALSE") {
     const parsedData = trueFalseSubpartSchema.safeParse(subpartData);
@@ -182,26 +122,13 @@ export function modifiedQuiz(data: {
       errors = parsedData.error.errors.map((value) => value.message);
     } else {
       const { questions, correct_answers, explanations } = parsedData.data;
-      if (isUpdateType) {
-        subpartPromise = prisma.trueFalseSubpart.update({
-          data: {
-            correctAnswer: correct_answers,
-            questions: questions,
-            explanations,
-          },
-          where: {
-            id: subpartId,
-          },
-        });
-      } else {
-        subpartPromise = prisma.trueFalseSubpart.create({
-          data: {
-            correctAnswer: correct_answers,
-            questions: questions,
-            explanations,
-          },
-        });
-      }
+      subpartPromise = prisma.trueFalseSubpart.create({
+        data: {
+          correctAnswer: correct_answers,
+          questions: questions,
+          explanations,
+        },
+      });
     }
   } else {
     throw new Error(
@@ -215,7 +142,7 @@ export function getDeleteSuppart({
   questionType,
   subpartId,
 }: {
-  questionType: questinoType;
+  questionType: QuestionType;
   subpartId: string;
 }) {
   if (questionType === "COMPLEX_MATCHING") {

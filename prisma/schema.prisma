@@ -70,6 +70,12 @@ enum QuestionType {
   SELECT_ALL
 }
 
+enum QuizQuestionRecordType {
+  CREATE
+  DELETE
+  UPDATE
+}
+
 model Story {
   id        String    @id @default(auto()) @map("_id") @db.ObjectId
   storyType StoryType
@@ -207,9 +213,13 @@ model QuizRecord {
 
   storyId String @db.ObjectId
 
-  quizType   QuizType
-  maxScore   Int
-  score      Int
+  quizType QuizType
+
+  maxScore           Int
+  score              Int
+  totalQuestion      Int
+  totalCorrectAnswer Int @default(0)
+
   createAt   DateTime @default(now())
   lastUpdate DateTime @default(now())
 
@@ -218,7 +228,7 @@ model QuizRecord {
 
   user                 User?    @relation(fields: [userId], references: [id])
   quizQuestionIdRemain String[] @db.ObjectId
-  grade                Grade[]
+  grades               Grade[]
 
   @@index([createAt])
 }
@@ -287,8 +297,10 @@ model QuizQuestion {
   questionType    QuestionType
   maxScore        Int
   subpartId       String       @db.ObjectId
+  isShow          Boolean      @default(true)
 
   @@unique([subpartId])
+  @@index([storyId, isShow])
   @@index([storyId])
 }
 
@@ -340,19 +352,35 @@ model UserResponse {
   ipAddress      String?
   quizQuestionId String       @db.ObjectId
   userAns        String[]
-  Grade          Grade[]
+  grade          Grade?
 }
 
 model QuestionAnswerFirstTime {
-  id             String    @id @default(auto()) @map("_id") @db.ObjectId
-  userId         String?   @db.ObjectId
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String?  @db.ObjectId
   ipAddress      String?
-  quizQuestionId String    @db.ObjectId
-  corrections    Boolean[]
+  quizQuestionId String   @db.ObjectId
+  isCorrect      Boolean
+  createAt       DateTime @default(now())
 
   @@unique([userId, quizQuestionId])
   @@unique([ipAddress, quizQuestionId])
   @@index([quizQuestionId])
+  @@index([quizQuestionId, isCorrect])
+}
+
+model StoryQuizScoreFirstTime {
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId             String?  @db.ObjectId
+  ipAddress          String?
+  storyId            String   @db.ObjectId
+  totalCorrectAnswer Int
+  createAt           DateTime @default(now())
+
+  @@unique([userId, storyId])
+  @@unique([ipAddress, storyId])
+  @@index([storyId, totalCorrectAnswer])
+  @@index([storyId])
 }
 
 model Grade {
@@ -367,7 +395,19 @@ model Grade {
   quizRecord     QuizRecord?  @relation(fields: [quizRecordId], references: [id])
   quizRecordId   String?      @db.ObjectId
 
+  @@unique([userResponseId])
   @@index([quizRecordId])
   @@index([userId, quizQuestionId])
   @@index([ipAddress, quizQuestionId])
+}
+
+model QuizQuestionRecord {
+  id             String                 @id @default(auto()) @map("_id") @db.ObjectId
+  quizQuestionId String                 @db.ObjectId
+  staffId        String                 @db.ObjectId
+  updateType     QuizQuestionRecordType
+  createAt       DateTime               @default(now())
+
+  @@index([quizQuestionId])
+  @@index([createAt])
 }

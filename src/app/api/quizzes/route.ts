@@ -1,25 +1,29 @@
 /* eslint-disable prettier/prettier */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { PrismaClient, QuestionType } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { isEditor } from "../tools/User";
+import User from "../tools/User";
 import {
   modifiedQuizSchema,
   quizQuestionIdSchema,
   quizTypeSchema,
   storyIdSchema,
 } from "./schema";
-import { getDeleteSuppart, getSubpart, modifiedQuiz } from "./tools";
+import { createQuizSubpart, getDeleteSuppart, getSubpart } from "./tools";
+
+/**
+ * create quizQuestionRecord for patch and delete
+ */
 
 const prisma = new PrismaClient();
 
 export async function POST(req: NextRequest) {
   try {
-    const editor = await isEditor();
-    if (!editor) {
+    const user = new User();
+    if (!(await user.isEditor())) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -46,7 +50,7 @@ export async function POST(req: NextRequest) {
     if (CountStoryExist === 0) {
       return NextResponse.json({ error: "Story not found" }, { status: 404 });
     }
-    const { subpartPromise, errorMessage, errors } = modifiedQuiz({
+    const { subpartPromise, errorMessage, errors } = createQuizSubpart({
       subpartData: quizData.subpart,
       question_type: quizData.question_type,
     });
@@ -106,6 +110,9 @@ export async function GET(req: NextRequest) {
     const quizType = url.searchParams.get("quiz_type");
     const quizTypeParse = quizTypeSchema.safeParse(quizType);
     const storyIdParse = storyIdSchema.safeParse(storyId);
+
+    const user = new User();
+
     if (!storyIdParse.success) {
       return new NextResponse(
         JSON.stringify({ error: storyIdParse.error.errors[0].message }),
@@ -125,7 +132,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const session = await getServerSession();
+    const session = user.getSession();
     if (!session) {
       return new NextResponse(
         JSON.stringify({ error: "Authentication is required" }),
@@ -135,11 +142,8 @@ export async function GET(req: NextRequest) {
         },
       );
     }
-
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email || "" },
-    });
-    if (!user) {
+    const id = await user.getUserId();
+    if (!id) {
       return new NextResponse(JSON.stringify({ error: "user not found" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -147,7 +151,7 @@ export async function GET(req: NextRequest) {
     }
 
     const quizzes = await prisma.quizQuestion.findMany({
-      where: { storyId: storyIdParse.data },
+      where: { storyId: storyIdParse.data, isShow: true },
       select: {
         id: true,
         contentCategory: true,
@@ -175,6 +179,8 @@ export async function GET(req: NextRequest) {
         storyId: storyIdParse.data,
         userId: user.id,
         maxScore: quizzes.reduce((sum, quiz) => sum + quiz.maxScore, 0),
+        totalQuestion: quizzes.length,
+        totalCorrectAnswer: 0,
         score: 0,
         quizType: quizTypeParse.data,
         quizQuestionIdRemain: quizzes.map((quiz) => quiz.id),
@@ -214,7 +220,7 @@ export async function DELETE(req: NextRequest) {
     const url = new URL(req.url);
     const quizQuestionId = url.searchParams.get("quiz_question_id");
     const quizQuestionIdParse = quizQuestionIdSchema.safeParse(quizQuestionId);
-
+    const user = new User();
     if (!quizQuestionIdParse.success) {
       return new NextResponse(
         JSON.stringify({ error: quizQuestionIdParse.error.errors[0].message }),
@@ -224,8 +230,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    const editor = await isEditor();
-    if (!editor) {
+    if (!(await user.isEditor())) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -243,14 +248,12 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    const quizQuestionDeletePromise = prisma.quizQuestion.delete({
+    const quizQuestionDeletePromise = prisma.quizQuestion.update({
       where: { id: quizQuestionIdParse.data },
-    });
-    const subpartDeletePromise = getDeleteSuppart({
-      ...quizQuestionCheck,
+      data: { isShow: false },
     });
 
-    await Promise.all([quizQuestionDeletePromise, subpartDeletePromise]);
+    await Promise.all([quizQuestionDeletePromise]);
 
     return new NextResponse(
       JSON.stringify({
@@ -278,7 +281,7 @@ export async function PATCH(req: NextRequest) {
     const url = new URL(req.url);
     const quizQuestionId = url.searchParams.get("quiz_question_id");
     const quizQuestionIdParse = quizQuestionIdSchema.safeParse(quizQuestionId);
-
+    const user = new User();
     if (!quizQuestionIdParse.success) {
       return new NextResponse(
         JSON.stringify({ error: quizQuestionIdParse.error.errors[0].message }),
@@ -288,8 +291,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const editor = await isEditor();
-    if (!editor) {
+    if (!user.isEditor()) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -329,34 +331,46 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const { errorMessage, subpartPromise, errors } = modifiedQuiz({
+    const { errorMessage, subpartPromise, errors } = createQuizSubpart({
       question_type: quizQuestionCheck.questionType,
-      subpartId: quizQuestionCheck.subpartId,
       subpartData: quizData.subpart,
     });
+    const subpart = await subpartPromise;
+
     if (errorMessage) {
       return NextResponse.json(
         { error: errorMessage, errors },
         { status: 400 },
       );
     }
-    const patchQuizQuestionPromise = prisma.quizQuestion.update({
+    const createQuizQuestionPromise = prisma.quizQuestion.create({
       data: {
         storyId: quizData.story_id,
         contentCategory: quizData.content_category,
         questionType: quizData.question_type,
         maxScore: quizData.max_score,
         subheader: quizData.subheader,
+        subpartId: subpart?.id || "",
+      },
+    });
+    const hideOldQuizQuestionPromise = prisma.quizQuestion.update({
+      data: {
+        isShow: false,
       },
       where: {
         id: quizQuestionIdParse.data,
       },
     });
-    const [subpart, quizQuestion] = await Promise.all([
-      subpartPromise,
-      patchQuizQuestionPromise,
+    const [quizQuestion] = await Promise.all([
+      createQuizQuestionPromise,
+      hideOldQuizQuestionPromise,
     ]);
-
+    prisma.quizQuestionRecord.create({
+      data: {
+        quizQuestionId: quizQuestion.id,
+        staffId: await get,
+      },
+    });
     return new NextResponse(
       JSON.stringify({
         message: "Quiz question updated",
